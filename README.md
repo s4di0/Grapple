@@ -1,29 +1,29 @@
-# 🕷 Grapple Movement System
+# Grapple Movement System
 
-It's a momentum based grapple system for Roblox.
+A momentum based grapple system for Roblox.
 
 ---
 
-## ✨ Features
+## Features
 
-- Server side raycast validation
-- Momentum preserving movement
-- Smooth acceleration based pull
-- Configurable modes:
+- Server-side raycast validation
+- Momentum-preserving movement
+- Smooth acceleration-based pull
+- Multiple gameplay modes:
   - Balanced
   - Arcade
   - Competitive
   - Swing (rope physics)
 - Cooldown system
-- Anti air grappling protection
+- Anti-air grappling protection
 - Wind audio effect
-- Automatic cleanup system
+- Automatic cleanup for all physics objects
 
 ---
 
-## ⚙ Configuration
+## Configuration
 
-All main settings are located in the server script:
+All tuning values are located inside the server script:
 
 - `MaxDistance`
 - `MinDistance`
@@ -33,39 +33,38 @@ All main settings are located in the server script:
 - `ArcBoost`
 - `Mode`
 
-You can tune these values to balance gameplay.
+These values control range, strength, and overall balance.
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
-GrappleTool (Tool)
-│
-├── ServerScript (Script)
-├── ClientScript (LocalScript)
-├── GrappleRemote (RemoteEvent)
-│
-├── WalkAnim (Animation)
-├── JumpAnim (Animation)
-├── GrappleAnim (Animation)
-└── GrappleFlyAnim (Animation)
+Inside the Tool:
 
----
-
-## 🧠 How It Works
-
-1. Player clicks with tool equipped.
-2. Client sends target position to server.
-3. Server performs raycast validation.
-4. If valid:
-   - Pull force is applied using VectorForce.
-   - Visual beam is created.
-   - Client receives effects (shake + sound).
-5. System cleans up automatically when finished.
-
-All physics are handled on the server for security.
-- Advanced combat systems
+- Server Script (handles physics, validation, cooldowns)
+- Local Script (handles input, animations, effects)
+- RemoteEvent (client ↔ server communication)
+- Animations:
+  - Walk
+  - Jump
+  - Grapple
+  - Grapple Fly
 
 ---
 
-Built with clean structure and performance in mind.
+## Functionality
+
+1. The player equips the tool.
+2. Clicking sends a request to the server.
+3. The server performs a raycast check.
+4. If the target is valid:
+   - A pulling force is applied using VectorForce.
+   - A visual beam is created.
+   - The client plays screen effects and sound.
+5. Everything is cleaned up automatically when finished.
+
+All movement physics are handled on the server to keep the system secure and exploit resistant.
+
+---
+
+Built with clean structure, performance, and gameplay balance in mind.
