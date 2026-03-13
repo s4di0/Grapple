@@ -6,16 +6,16 @@ A momentum based grapple system for Roblox.
 
 ## Features
 
-- Server-side raycast validation
-- Momentum-preserving movement
-- Smooth acceleration-based pull
+- Server side raycast validation
+- Momentum preserving movement
+- Smooth acceleration based pull
 - Multiple gameplay modes:
   - Balanced
   - Arcade
   - Competitive
   - Swing (rope physics)
 - Cooldown system
-- Anti-air grappling protection
+- Anti air grappling protection
 - Wind audio effect
 - Automatic cleanup for all physics objects
 
@@ -43,7 +43,7 @@ Inside the Tool:
 
 - Server Script (handles physics, validation, cooldowns)
 - Local Script (handles input, animations, effects)
-- RemoteEvent (client ↔ server communication)
+- RemoteEvent (client to server communication) and vice versa.
 - Animations:
   - Walk
   - Jump
