@@ -1,5 +1,4 @@
 -- GRAPPLE SCRPT
-
 print("ServerScript run test")
 
 local Grapple = script.Parent
