@@ -1,269 +1,215 @@
-print("ServerScript Grapple Test")
+print("grapple server live")
 
-local Grapple = script.Parent
-local Remote = Grapple:WaitForChild("GrappleRemote")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Debris = game:GetService("Debris")
+local tool = script.Parent
+local remote = tool:WaitForChild("GrappleRemote")
 
--- SETTINGS
-local Config = {
-	MaxDistance = 10000, -- MAX RANGE
-	MinDistance = 6,     -- MIN RANGE
-	StopDistance = 10,   -- PULL DISTANCE
-	Cooldown = 1.0,      -- PREVENT SPAM
-	PullAcceleration = 1000, -- PULL FORCE
-	ArcBoost = 60,       -- UPWARD BOOST
-	Mode = "Balanced"    -- BALANCE MODE
-}
+local players = game:GetService("Players")
+local runService = game:GetService("RunService")
+local debris = game:GetService("Debris")
 
-local Cooldowns = {} -- COOLDOWN PER PLAYER
-local Active = {} -- GRAPPLE STORAGE 
+-- tuned during testing, not final
+local MAX_RANGE = 10000
+local MIN_RANGE = 6
+local STOP_DIST = 10
+local COOLDOWN_TIME = 1
 
--- GETTERS
+local BASE_FORCE = 1000
+local UPWARD_KICK = 60
 
-local function GetCharacter(Plr)
-	return Plr.Character
+local MODE = "Balanced" -- swapped a lot while testing
+
+local cooldown = {}
+local active = {}
+
+local function getRoot(plr)
+	local char = plr.Character
+	if not char then return end
+	return char:FindFirstChild("HumanoidRootPart")
 end
 
-local function GetRoot(Character)
-	if not Character then return nil end
-	return Character:FindFirstChild("HumanoidRootPart")
+local function clear(plr)
+	local data = active[plr]
+	if not data then return end
+
+	if data.force then data.force:Destroy() end
+	if data.att then data.att:Destroy() end
+	if data.beam then data.beam:Destroy() end
+	if data.rope then data.rope:Destroy() end
+	if data.anchor then data.anchor:Destroy() end
+
+	active[plr] = nil
 end
 
-local function GetHumanoid(Character)
-	if not Character then return nil end
-	return Character:FindFirstChildOfClass("Humanoid")
-end
-
--- CHECK FOR COOLDOWN
-local function IsReady(Plr)
-	return not Cooldowns[Plr]
-end
-
--- COOLDOWN TIMER
-local function StartCooldown(Plr)
-	Cooldowns[Plr] = true
-	task.delay(Config.Cooldown, function()
-		Cooldowns[Plr] = nil
+local function applyCooldown(plr)
+	cooldown[plr] = true
+	task.delay(COOLDOWN_TIME, function()
+		cooldown[plr] = nil
 	end)
 end
 
--- REMOVAL OF GRAPPLE
-local function RemoveGrapple(Plr)
+local function makeForce(root)
+	local att = Instance.new("Attachment")
+	att.Parent = root
 
-	local Data = Active[Plr]
-	if not Data then return end
+	local vf = Instance.new("VectorForce")
+	vf.Attachment0 = att
+	vf.RelativeTo = Enum.ActuatorRelativeTo.World
+	vf.ApplyAtCenterOfMass = true
+	vf.Parent = root
 
-	if Data.force then Data.force:Destroy() end
-	if Data.attach then Data.attach:Destroy() end
-	if Data.beam then Data.beam:Destroy() end
-	if Data.rope then Data.rope:Destroy() end
-	if Data.anchor then Data.anchor:Destroy() end
-	Active[Plr] = nil
+	return vf, att
 end
 
--- pulling force using VectorForce
-local function createForce(Root)
+local function makeBeam(root, pos)
+	local a0 = Instance.new("Attachment")
+	a0.Parent = root
 
-	local attachment = Instance.new("Attachment")
-	attachment.Parent = Root
-
-	local force = Instance.new("VectorForce")
-	force.Attachment0 = attachment
-	force.RelativeTo = Enum.ActuatorRelativeTo.World
-	force.ApplyAtCenterOfMass = true
-	force.Parent = Root
-	return force, attachment
-end
-
--- visible beam effect between player and target
-local function BeamCreation(Root, TargetPosition)
-
-	local StartAttachment = Instance.new("Attachment")
-	StartAttachment.Parent = Root
-
-	-- invisible anchor part placed at hit position
 	local anchor = Instance.new("Part")
-	anchor.Size = Vector3.new(1,1,1)
 	anchor.Anchored = true
 	anchor.CanCollide = false
 	anchor.Transparency = 1
-	anchor.Position = TargetPosition
-	anchor.Parent = Workspace
+	anchor.Size = Vector3.new(1,1,1)
+	anchor.Position = pos
+	anchor.Parent = workspace
 
-	Debris:AddItem(anchor, 6) --  cleanup
+	debris:AddItem(anchor, 6)
 
-	local endAttachment = Instance.new("Attachment")
-	endAttachment.Parent = anchor
+	local a1 = Instance.new("Attachment")
+	a1.Parent = anchor
+
 	local beam = Instance.new("Beam")
-	beam.Attachment0 = StartAttachment
-	beam.Attachment1 = endAttachment
+	beam.Attachment0 = a0
+	beam.Attachment1 = a1
 	beam.Width0 = 0.2
 	beam.Width1 = 0.2
 	beam.FaceCamera = true
-	beam.Parent = Root
-	return beam, StartAttachment, anchor
+	beam.Parent = root
+
+	return beam, a0, anchor
 end
 
--- main grapple function
-local function launch(Plr, TargetPosition)
+local function fire(plr, targetPos)
+	if cooldown[plr] then return end
 
-	-- prevent spam
-	if not IsReady(Plr) then return end
+	local root = getRoot(plr)
+	if not root then return end
 
-	local Character = GetCharacter(Plr)
-	if not Character then return end
+	local dir = (targetPos - root.Position).Unit * MAX_RANGE
+	local dist = dir.Magnitude
 
-	local Root = GetRoot(Character)
-	if not Root then return end
+	if dist < MIN_RANGE then return end
 
-	local humanoid = GetHumanoid(Character)
-	if not humanoid then return end
+	applyCooldown(plr)
+	clear(plr)
 
-	-- calculate direction toward click
-	local direction = (TargetPosition - Root.Position).Unit * Config.MaxDistance
-	local distance = direction.Magnitude
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = {plr.Character}
+	params.IgnoreWater = true
 
-	-- ignore if too close
-	if distance < Config.MinDistance then return end
+	local result = workspace:Raycast(root.Position, dir, params)
+	if not result then return end
 
-	StartCooldown(Plr)
-	RemoveGrapple(Plr)
+	local hit = result.Position
 
-	-- raycast to ensure we only hit real surfaces
-	local RParams = RaycastParams.new()
-	RParams.FilterType = Enum.RaycastFilterType.Exclude
-	RParams.FilterDescendantsInstances = {Character}
-	RParams.IgnoreWater = true
+	-- quick pop upward so it doesn't feel flat
+	local vel = root.AssemblyLinearVelocity
+	root.AssemblyLinearVelocity = Vector3.new(vel.X, UPWARD_KICK, vel.Z)
 
-	local Result = Workspace:Raycast(Root.Position, direction, RParams)
+	remote:FireClient(plr, "shake")
+	remote:FireClient(plr, "wind")
 
-	-- stop if nothing was hit (no air grappling)
-	if not Result then
-		return
-	end
-
-	local HitPosition = Result.Position
-
-	-- small upward boost for movement feel
-	local velocity = Root.AssemblyLinearVelocity
-	Root.AssemblyLinearVelocity = Vector3.new(
-		velocity.X,
-		Config.ArcBoost,
-		velocity.Z
-	)
-
-	-- effects
-	Remote:FireClient(Plr, "shake")
-	Remote:FireClient(Plr, "wind")
-
-	-- swing mode uses rope physics
-	if Config.Mode == "Swing" then
-
+	if MODE == "Swing" then
 		local rope = Instance.new("RopeConstraint")
-		local attachA = Instance.new("Attachment")
-		attachA.Parent = Root
+
+		local a0 = Instance.new("Attachment")
+		a0.Parent = root
 
 		local anchor = Instance.new("Part")
-		anchor.Size = Vector3.new(1,1,1)
 		anchor.Anchored = true
 		anchor.Transparency = 1
 		anchor.CanCollide = false
-		anchor.Position = HitPosition
-		anchor.Parent = Workspace
+		anchor.Size = Vector3.new(1,1,1)
+		anchor.Position = hit
+		anchor.Parent = workspace
 
-		Debris:AddItem(anchor,6)
+		debris:AddItem(anchor, 6)
 
-		local attachB = Instance.new("Attachment")
-		attachB.Parent = anchor
+		local a1 = Instance.new("Attachment")
+		a1.Parent = anchor
 
-		rope.Attachment0 = attachA
-		rope.Attachment1 = attachB
-		rope.Length = distance * 1.02
+		rope.Attachment0 = a0
+		rope.Attachment1 = a1
+		rope.Length = dist * 1.02
 		rope.Visible = true
-		rope.Parent = Root
+		rope.Parent = root
 
-		Active[Plr] = { rope = rope, anchor = anchor }
-
+		active[plr] = {rope = rope, anchor = anchor}
 		return
 	end
 
-	-- normal pull mode
-	local force, attach = createForce(Root)
-	local beam, beamAttach, anchor = BeamCreation(Root, HitPosition)
+	local force, att = makeForce(root)
+	local beam, _, anchor = makeBeam(root, hit)
 
-	Active[Plr] = {
+	active[plr] = {
 		force = force,
-		attach = attach,
+		att = att,
 		beam = beam,
 		anchor = anchor
 	}
 
-	-- smooth pulling loop
-	local connection
-	connection = RunService.Heartbeat:Connect(function()
-
-		if not Root.Parent then
-			connection:Disconnect()
-			RemoveGrapple(Plr)
+	local conn
+	conn = runService.Heartbeat:Connect(function()
+		if not root.Parent then
+			conn:Disconnect()
+			clear(plr)
 			return
 		end
 
-		local toTarget = HitPosition - Root.Position
-		local dist = toTarget.Magnitude
+		local delta = hit - root.Position
+		local d = delta.Magnitude
 
-		-- stop when close enough
-		if dist <= Config.StopDistance then
-			connection:Disconnect()
-			RemoveGrapple(Plr)
+		if d <= STOP_DIST then
+			conn:Disconnect()
+			clear(plr)
 			return
 		end
 
-		local acceleration = Config.PullAcceleration
+		local accel = BASE_FORCE
 
-		-- mode adjustments
-		if Config.Mode == "Arcade" then
-			acceleration *= 1.35
-		elseif Config.Mode == "Competitive" then
-			acceleration *= 0.85
+		if MODE == "Arcade" then
+			accel *= 1.35
+		elseif MODE == "Competitive" then
+			accel *= 0.85
 		end
 
-		-- apply force toward hit position
-		local desired = toTarget.Unit * acceleration * Root.AssemblyMass
-		force.Force = desired
-
+		force.Force = delta.Unit * accel * root.AssemblyMass
 	end)
 end
 
--- remote communication from client
-Remote.OnServerEvent:Connect(function(Plr, action, Data)
+remote.OnServerEvent:Connect(function(plr, action, data)
 	if action == "grapple" then
-		launch(Plr, Data)
+		fire(plr, data)
 	elseif action == "cancel" then
-		RemoveGrapple(Plr)
+		clear(plr)
 	end
 end)
 
--- cleanup when player leaves
-Players.PlayerRemoving:Connect(function(Plr)
-	RemoveGrapple(Plr)
-	Cooldowns[Plr] = nil
+players.PlayerRemoving:Connect(function(plr)
+	clear(plr)
+	cooldown[plr] = nil
 end)
 
--- cleanup when Grapple unequips
-Grapple.Unequipped:Connect(function()
-	for Plr in pairs(Active) do
-		RemoveGrapple(Plr)
+tool.Unequipped:Connect(function()
+	for plr in pairs(active) do
+		clear(plr)
 	end
 end)
 
--- safety check loop to prevent leftover grapples
-RunService.Heartbeat:Connect(function()
-	for Plr in pairs(Active) do
-		local char = GetCharacter(Plr)
-		if not char then
-			RemoveGrapple(Plr)
+runService.Heartbeat:Connect(function()
+	for plr in pairs(active) do
+		if not plr.Character then
+			clear(plr)
 		end
 	end
 end)
