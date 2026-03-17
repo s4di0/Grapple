@@ -1,38 +1,61 @@
-print("grapple server live")
+-- GRAPPLE SCRPT
 
-local tool = script.Parent
-local remote = tool:WaitForChild("GrappleRemote")
+print("ServerScript run test")
 
-local players = game:GetService("Players")
-local runService = game:GetService("RunService")
-local debris = game:GetService("Debris")
+local Grapple = script.Parent
+local Remote = Grapple:WaitForChild("GrappleRemote")
 
--- tuned during testing, not final
-local MAX_RANGE = 10000
-local MIN_RANGE = 6
-local STOP_DIST = 10
-local COOLDOWN_TIME = 1
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Debris = game:GetService("Debris")
 
-local BASE_FORCE = 1000
-local UPWARD_KICK = 60
+-- tuning values
+local MAX_DISTANCE = 10000
+local MIN_DISTANCE = 6
+local STOP_DISTANCE = 10
+local COOLDOWN = 1
 
-local MODE = "Balanced" -- swapped a lot while testing
+local PULL_FORCE = 1000
+local ARC_BOOST = 60
 
-local cooldown = {}
+local MODE = "Balanced" -- change while testing if needed
+
+local cooldowns = {}
 local active = {}
 
-local function getRoot(plr)
-	local char = plr.Character
-	if not char then return end
+-- getters
+local function GetCharacter(plr)
+	if not plr then return nil end
+	return plr.Character
+end
+
+local function GetRoot(char)
+	if not char then return nil end
 	return char:FindFirstChild("HumanoidRootPart")
 end
 
-local function clear(plr)
+local function GetHumanoid(char)
+	if not char then return nil end
+	return char:FindFirstChildOfClass("Humanoid")
+end
+
+local function IsOnCooldown(plr)
+	return cooldowns[plr] == true
+end
+
+local function StartCooldown(plr)
+	cooldowns[plr] = true
+	task.delay(COOLDOWN, function()
+		cooldowns[plr] = nil
+	end)
+end
+
+local function Cleanup(plr)
 	local data = active[plr]
 	if not data then return end
 
 	if data.force then data.force:Destroy() end
-	if data.att then data.att:Destroy() end
+	if data.attach then data.attach:Destroy() end
 	if data.beam then data.beam:Destroy() end
 	if data.rope then data.rope:Destroy() end
 	if data.anchor then data.anchor:Destroy() end
@@ -40,18 +63,13 @@ local function clear(plr)
 	active[plr] = nil
 end
 
-local function applyCooldown(plr)
-	cooldown[plr] = true
-	task.delay(COOLDOWN_TIME, function()
-		cooldown[plr] = nil
-	end)
-end
-
-local function makeForce(root)
+local function MakeForce(root)
 	local att = Instance.new("Attachment")
+	att.Name = "GrappleAttachment"
 	att.Parent = root
 
 	local vf = Instance.new("VectorForce")
+	vf.Name = "GrappleForce"
 	vf.Attachment0 = att
 	vf.RelativeTo = Enum.ActuatorRelativeTo.World
 	vf.ApplyAtCenterOfMass = true
@@ -60,64 +78,73 @@ local function makeForce(root)
 	return vf, att
 end
 
-local function makeBeam(root, pos)
-	local a0 = Instance.new("Attachment")
-	a0.Parent = root
+local function MakeBeam(root, pos)
+	local startAtt = Instance.new("Attachment")
+	startAtt.Name = "BeamStart"
+	startAtt.Parent = root
 
 	local anchor = Instance.new("Part")
+	anchor.Size = Vector3.new(1,1,1)
 	anchor.Anchored = true
 	anchor.CanCollide = false
 	anchor.Transparency = 1
-	anchor.Size = Vector3.new(1,1,1)
 	anchor.Position = pos
 	anchor.Parent = workspace
 
-	debris:AddItem(anchor, 6)
+	Debris:AddItem(anchor, 6)
 
-	local a1 = Instance.new("Attachment")
-	a1.Parent = anchor
+	local endAtt = Instance.new("Attachment")
+	endAtt.Name = "BeamEnd"
+	endAtt.Parent = anchor
 
 	local beam = Instance.new("Beam")
-	beam.Attachment0 = a0
-	beam.Attachment1 = a1
+	beam.Attachment0 = startAtt
+	beam.Attachment1 = endAtt
 	beam.Width0 = 0.2
 	beam.Width1 = 0.2
 	beam.FaceCamera = true
 	beam.Parent = root
 
-	return beam, a0, anchor
+	return beam, startAtt, anchor
 end
 
-local function fire(plr, targetPos)
-	if cooldown[plr] then return end
+local function Launch(plr, targetPos)
+	if IsOnCooldown(plr) then return end
 
-	local root = getRoot(plr)
+	local char = GetCharacter(plr)
+	if not char then return end
+
+	local root = GetRoot(char)
 	if not root then return end
 
-	local dir = (targetPos - root.Position).Unit * MAX_RANGE
-	local dist = dir.Magnitude
+	local humanoid = GetHumanoid(char)
+	if not humanoid then return end
 
-	if dist < MIN_RANGE then return end
+	local direction = targetPos - root.Position
+	if direction.Magnitude <= 0 then return end
 
-	applyCooldown(plr)
-	clear(plr)
+	local distance = direction.Magnitude
+	if distance < MIN_DISTANCE then return end
+
+	StartCooldown(plr)
+	Cleanup(plr)
 
 	local params = RaycastParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = {plr.Character}
+	params.FilterDescendantsInstances = {char}
 	params.IgnoreWater = true
 
-	local result = workspace:Raycast(root.Position, dir, params)
+	local result = workspace:Raycast(root.Position, direction.Unit * MAX_DISTANCE, params)
 	if not result then return end
 
-	local hit = result.Position
+	local hitPos = result.Position
 
-	-- quick pop upward so it doesn't feel flat
+	-- small upward boost so it feels less stiff
 	local vel = root.AssemblyLinearVelocity
-	root.AssemblyLinearVelocity = Vector3.new(vel.X, UPWARD_KICK, vel.Z)
+	root.AssemblyLinearVelocity = Vector3.new(vel.X, ARC_BOOST, vel.Z)
 
-	remote:FireClient(plr, "shake")
-	remote:FireClient(plr, "wind")
+	Remote:FireClient(plr, "shake")
+	Remote:FireClient(plr, "wind")
 
 	if MODE == "Swing" then
 		local rope = Instance.new("RopeConstraint")
@@ -126,56 +153,51 @@ local function fire(plr, targetPos)
 		a0.Parent = root
 
 		local anchor = Instance.new("Part")
+		anchor.Size = Vector3.new(1,1,1)
 		anchor.Anchored = true
 		anchor.Transparency = 1
 		anchor.CanCollide = false
-		anchor.Size = Vector3.new(1,1,1)
-		anchor.Position = hit
+		anchor.Position = hitPos
 		anchor.Parent = workspace
 
-		debris:AddItem(anchor, 6)
+		Debris:AddItem(anchor, 6)
 
 		local a1 = Instance.new("Attachment")
 		a1.Parent = anchor
 
 		rope.Attachment0 = a0
 		rope.Attachment1 = a1
-		rope.Length = dist * 1.02
+		rope.Length = distance * 1.02
 		rope.Visible = true
 		rope.Parent = root
 
-		active[plr] = {rope = rope, anchor = anchor}
+		active[plr] = { rope = rope, anchor = anchor }
 		return
 	end
 
-	local force, att = makeForce(root)
-	local beam, _, anchor = makeBeam(root, hit)
+	local force, attach = MakeForce(root)
+	local beam, _, anchor = MakeBeam(root, hitPos)
 
-	active[plr] = {
-		force = force,
-		att = att,
-		beam = beam,
-		anchor = anchor
-	}
+	active[plr] = { force = force, attach = attach, beam = beam, anchor = anchor }
 
-	local conn
-	conn = runService.Heartbeat:Connect(function()
-		if not root.Parent then
-			conn:Disconnect()
-			clear(plr)
+	local connection
+	connection = RunService.Heartbeat:Connect(function()
+		if not root or not root.Parent then
+			connection:Disconnect()
+			Cleanup(plr)
 			return
 		end
 
-		local delta = hit - root.Position
-		local d = delta.Magnitude
+		local offset = hitPos - root.Position
+		local dist = offset.Magnitude
 
-		if d <= STOP_DIST then
-			conn:Disconnect()
-			clear(plr)
+		if dist <= STOP_DISTANCE then
+			connection:Disconnect()
+			Cleanup(plr)
 			return
 		end
 
-		local accel = BASE_FORCE
+		local accel = PULL_FORCE
 
 		if MODE == "Arcade" then
 			accel *= 1.35
@@ -183,33 +205,25 @@ local function fire(plr, targetPos)
 			accel *= 0.85
 		end
 
-		force.Force = delta.Unit * accel * root.AssemblyMass
+		force.Force = offset.Unit * accel * root.AssemblyMass
 	end)
 end
 
-remote.OnServerEvent:Connect(function(plr, action, data)
+Remote.OnServerEvent:Connect(function(plr, action, data)
 	if action == "grapple" then
-		fire(plr, data)
+		Launch(plr, data)
 	elseif action == "cancel" then
-		clear(plr)
+		Cleanup(plr)
 	end
 end)
 
-players.PlayerRemoving:Connect(function(plr)
-	clear(plr)
-	cooldown[plr] = nil
+Players.PlayerRemoving:Connect(function(plr)
+	Cleanup(plr)
+	cooldowns[plr] = nil
 end)
 
-tool.Unequipped:Connect(function()
+Grapple.Unequipped:Connect(function()
 	for plr in pairs(active) do
-		clear(plr)
-	end
-end)
-
-runService.Heartbeat:Connect(function()
-	for plr in pairs(active) do
-		if not plr.Character then
-			clear(plr)
-		end
+		Cleanup(plr)
 	end
 end)
