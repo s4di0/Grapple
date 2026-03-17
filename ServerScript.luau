@@ -18,7 +18,7 @@ local Config = {
 }
 
 local Cooldowns = {} -- COOLDOWN PER PLAYER
-local Active = {} -- GRAPPLE STORAGE SO EASY CLEAN
+local Active = {} -- GRAPPLE STORAGE 
 
 -- GETTERS
 
@@ -78,7 +78,7 @@ local function createForce(Root)
 end
 
 -- visible beam effect between player and target
-local function BeamCreation(Root, targetPosition)
+local function BeamCreation(Root, TargetPosition)
 
 	local StartAttachment = Instance.new("Attachment")
 	StartAttachment.Parent = Root
@@ -89,7 +89,7 @@ local function BeamCreation(Root, targetPosition)
 	anchor.Anchored = true
 	anchor.CanCollide = false
 	anchor.Transparency = 1
-	anchor.Position = targetPosition
+	anchor.Position = TargetPosition
 	anchor.Parent = Workspace
 
 	Debris:AddItem(anchor, 6) --  cleanup
@@ -107,7 +107,7 @@ local function BeamCreation(Root, targetPosition)
 end
 
 -- main grapple function
-local function launch(Plr, targetPosition)
+local function launch(Plr, TargetPosition)
 
 	-- prevent spam
 	if not IsReady(Plr) then return end
@@ -122,7 +122,7 @@ local function launch(Plr, targetPosition)
 	if not humanoid then return end
 
 	-- calculate direction toward click
-	local direction = (targetPosition - Root.Position).Unit * Config.MaxDistance
+	local direction = (TargetPosition - Root.Position).Unit * Config.MaxDistance
 	local distance = direction.Magnitude
 
 	-- ignore if too close
@@ -132,19 +132,19 @@ local function launch(Plr, targetPosition)
 	RemoveGrapple(Plr)
 
 	-- raycast to ensure we only hit real surfaces
-	local rayParams = RaycastParams.new()
-	rayParams.FilterType = Enum.RaycastFilterType.Exclude
-	rayParams.FilterDescendantsInstances = {Character}
-	rayParams.IgnoreWater = true
+	local RParams = RaycastParams.new()
+	RParams.FilterType = Enum.RaycastFilterType.Exclude
+	RParams.FilterDescendantsInstances = {Character}
+	RParams.IgnoreWater = true
 
-	local Result = Workspace:Raycast(Root.Position, direction, rayParams)
+	local Result = Workspace:Raycast(Root.Position, direction, RParams)
 
 	-- stop if nothing was hit (no air grappling)
 	if not Result then
 		return
 	end
 
-	local hitPosition = Result.Position
+	local HitPosition = Result.Position
 
 	-- small upward boost for movement feel
 	local velocity = Root.AssemblyLinearVelocity
@@ -170,7 +170,7 @@ local function launch(Plr, targetPosition)
 		anchor.Anchored = true
 		anchor.Transparency = 1
 		anchor.CanCollide = false
-		anchor.Position = hitPosition
+		anchor.Position = HitPosition
 		anchor.Parent = Workspace
 
 		Debris:AddItem(anchor,6)
@@ -191,7 +191,7 @@ local function launch(Plr, targetPosition)
 
 	-- normal pull mode
 	local force, attach = createForce(Root)
-	local beam, beamAttach, anchor = BeamCreation(Root, hitPosition)
+	local beam, beamAttach, anchor = BeamCreation(Root, HitPosition)
 
 	Active[Plr] = {
 		force = force,
@@ -210,7 +210,7 @@ local function launch(Plr, targetPosition)
 			return
 		end
 
-		local toTarget = hitPosition - Root.Position
+		local toTarget = HitPosition - Root.Position
 		local dist = toTarget.Magnitude
 
 		-- stop when close enough
@@ -245,7 +245,7 @@ Remote.OnServerEvent:Connect(function(Plr, action, Data)
 	end
 end)
 
--- cleanup when Plr leaves
+-- cleanup when player leaves
 Players.PlayerRemoving:Connect(function(Plr)
 	RemoveGrapple(Plr)
 	Cooldowns[Plr] = nil
